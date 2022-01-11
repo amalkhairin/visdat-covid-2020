@@ -1,6 +1,6 @@
+bokeh==2.4.2
 affine==2.3.0
 autopep8==1.5.4
-bokeh==2.4.2
 certifi==2021.10.8
 click-plugins==1.1.1
 colorcet==3.0.0
