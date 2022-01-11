@@ -1,20 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
-
-
 # !pip install geopandas
 
-
-# In[2]:
-
-
 # !pip install geoplot
-
-
-# In[1]:
-
 
 import pandas as pd
 import geopandas as gpd
@@ -35,27 +24,24 @@ import json
 import mapclassify as mc
 
 
-# In[2]:
-
-
 # The figure will be rendered in a static HTML file called output_file_test.html
 output_file('tubes_output.html', 
             title='Statistik sebaran Covid-19 per provinsi di Indonesia')
 
 
-# In[25]:
-
-
+# load dataset covid-19
 df_cvdID = pd.read_csv("https://raw.githubusercontent.com/amalkhairin/JapaneseWhiskyReviewDataset/main/IDN-COVID19.csv")
+
+# load dataset geojson yang berisi data gpd indonesia
 id_gpd = gpd.read_file("https://raw.githubusercontent.com/Alf-Anas/batas-administrasi-indonesia/master/batas_provinsi/batas_provinsi.geojson")
 
+# membersihkan data id_gpd agar sesuai dengan dataset covid-19
 id_gpd["Provinsi"] = id_gpd["Provinsi"].str.title()
 id_gpd["Provinsi"] = id_gpd["Provinsi"].str.replace("Dki Jakarta","DKI Jakarta")
 id_gpd = id_gpd.sort_values("Provinsi", ascending=True, ignore_index=True)
 
 
-# In[24]:
-
+# membuat fungsi yang akan memberikan level berdasarkan skala kasus terkonfirmasi
 def categorical_color_level(x):
     if x == 0:
         return '0'
@@ -78,139 +64,145 @@ def categorical_color_level(x):
     else:
         return '> 1.000.000'
 
+
+# fungsi untuk membersihkan dataset covid-19
 def clear_data(df):
+    # mengurutkan berdasarkan nama provinsi
     df = df.sort_values("Province_name", ascending=True, ignore_index=True)
+    
+    # membuat titik koordinat geometri
     splt = df["Features Geometry Coordinates"].str.split(",", n = 1, expand = True)
     df["x"] = pd.to_numeric(splt[0])
     df["y"] = pd.to_numeric(splt[1])
+    
+    #membuat kolom category untuk menyimpan data level hasil dari fungsi categorical_color_level
     df["category"] = [categorical_color_level(x) for x in df["Confirmed_cases"]]
+    
+    # drop kolom yang tidak diperlukan
     df.drop(["Features Geometry Coordinates"], axis=1, inplace=True)
     df.drop(["Type","Features Type","Features Geometry Type"], axis=1, inplace=True)
+    
+    # return dataset yang sudah dibersihkan
     return df
 
 
-# In[7]:
-
-
-# def to_geodataframe(df):
-#     df['coordinates'] = df[['x', 'y']].values.tolist()
-#     df['coordinates'] = df['coordinates'].apply(Point)
-#     df = gpd.GeoDataFrame(df, geometry='coordinates')
-#     return df
-
-
-# In[26]:
-
-
+# menjalankan fungsi clear_data untuk membersihkan dataset covid-19
 df_cvdID = clear_data(df_cvdID)
-# df_cvdID = to_geodataframe(df_cvdID)
 
+# df_cvdID.head(3)
 
-# In[27]:
+# id_gpd.head(3)
 
-
-df_cvdID.head(3)
-
-
-# In[28]:
-
-
-id_gpd.head(3)
-
-
-# In[29]:
-
-
+# menambahkan atribut crs berupa kode epsg agar python dapat mengenalinya sebagai map
 id_gpd.crs = {'init': 'epsg:23845'}
 
 
-# In[34]:
-
-
-def json_data(selectedDay):
-    sd = selectedDay
-    # Pull selected year
-    if sd == 'None':
+# fungsi json_data yang akan mengembalikan data json berdasarkan input nama provinsi
+def json_data(selectedProvince):
+    
+    # menyimpan selectedProvince ke dalam variabel sp
+    sp = selectedProvince
+    
+    #jika provinsi yang dipilih "None" maka mengembil seluruh data pada dataset dan data gpd
+    if sp == 'None':
         df_dt = df_cvdID.copy()
         dt_gpd = id_gpd.copy()
+    # jika tidak, maka hanya mengambil data sesuai dengan provinsi yang dipilih
     else:
-        df_dt = df_cvdID[df_cvdID['Province_name'] == sd]
-        dt_gpd = id_gpd[id_gpd['Provinsi'] == sd]
+        df_dt = df_cvdID[df_cvdID['Province_name'] == sp]
+        dt_gpd = id_gpd[id_gpd['Provinsi'] == sp]
     
+    # melakukan merge pada dataset dengan data gpd
     merge = dt_gpd.merge(df_dt,how='left', left_on=['Provinsi'], right_on=['Province_name'])
 
-    # Bokeh uses geojson formatting, representing geographical   features, with json
     # Convert to json
     merge_json = json.loads(merge.to_json())
     
-    # Convert to json preferred string-like object 
+    # Convert to json preferred string-like object
     json_data = json.dumps(merge_json)
+    
+    # return data json
     return json_data
 
 
-# In[41]:
-
-
-def columndata(selectedDay):
-    sd = selectedDay
-    # Pull selected day
-    if sd == 'None':
+# fungsi columndata akan mengembalikan sebuah data berdasarkan input provinsi
+# berfungsi untuk tabel column yang akan ditampilkan pada layout
+def columndata(selectedProvince):
+    #menyimpan selected province pada variabel sp
+    sp = selectedProvince
+    
+    # jika provinsi yang dipilih "None" maka mengambil seluruh data pada dataset covid-19
+    if sp == 'None':
         column = df_cvdID.copy()
+    #jika tidak maka mengambil data sesuai dengan input provinsi
     else:
-        column = df_cvdID[df_cvdID['Province_name'] == sd]
+        column = df_cvdID[df_cvdID['Province_name'] == sp]
+    
+    # mengurutkan berdasarkan jumlah comfirmed cases tertinggi ke terendah
     column=column.sort_values(by='Confirmed_cases', ascending=False)
+    
+    # membuat value rank untuk data column
     rank=[]
     for i in range(column.index.shape[0]):
         rank.append(i+1)
+    
+    # memasukkan kolom rank ke dataset
     column['rank']=rank
-    most_country=column.copy()
+    most_cases=column.copy()
+    
+    # membuat dictionary yang berisi rank, nama provinsi, comfirmed cases, recovered cases, dan death cases
     source = dict(
-        rank=[rank for rank in most_country['rank']],
-        province=[province for province in most_country['Province_name']],
-        confirmed=[confirmed for confirmed in most_country['Confirmed_cases']],
-        recovered=[recovered for recovered in most_country['Recovered_cases']],
-        death=[death for death in most_country['Death_cases']]
+        rank=[rank for rank in most_cases['rank']],
+        province=[province for province in most_cases['Province_name']],
+        confirmed=[confirmed for confirmed in most_cases['Confirmed_cases']],
+        recovered=[recovered for recovered in most_cases['Recovered_cases']],
+        death=[death for death in most_cases['Death_cases']]
     )
     return source
 
 
-# In[42]:
-
-
+# funsgi update plot yang akan melakukan update pada plot jika terdapat input/perubahan
 def update_plot(attr, old, new):
-    day = menu.value
-    new_data = json_data(day)
+    # mengambil value dari menu dropdown
+    province = menu.value
+    # membuat data json baru berdasarkan value dari variabel province
+    new_data = json_data(province)
+    # membuat data geojson
     geosource.geojson = new_data
-    source.data = columndata(day)
+    # membuat data source baru untuk tabel berdasarkan value dari variabel province
+    source.data = columndata(province)
 
 
-# In[43]:
-
-
+# membuat list nama provinsi untuk dropdown menu
 list_province_name = [i for i in df_cvdID['Province_name']]
 list_province_name.insert(0,"None")
+
+# membuat menu dropdown yang berisi nama-nama provinsi
 menu = Select(
     options=list_province_name,
     value='None',
     title='Provinsi'
 )
+# melakukan set callback pada saat menu dropdown terdapat perubahan, plot akan di update
 menu.on_change('value', update_plot)
 
-# In[45]:
-
-
+# inisisalisasi data geosource dan source
 geosource = GeoJSONDataSource(geojson = json_data("None"))
 source = ColumnDataSource(columndata("None"))
-
-# In[46]:
     
+# membuat color mapping
+# factor list untuk factor mcolor mapping
 factor_list = ['0','1 - 99','100 - 499','500 - 999','1.000 - 4.999','5.000 - 9.999','10.000 - 49.999','50.000 - 99.999','100.000 - 1.000.000', '> 1.000.000']
+
+# palet warna yang akan digunakan
 palet=['#242424', '#360007', '#67000d', '#cb181d', '#ef3b2c', '#fc9272', '#fcbba1', '#f7dada', '#fcf2f2', '#ffffff'] 
+# membalik urutan warna menjadi yang tercerah ke tergelap
 palet = palet[::-1]
 
-# color_mapper = LinearColorMapper(palette = palet, low = 0, high = 1000000)
+# membuat color mapper menggunakan categorical color mapper
 color_mapper = CategoricalColorMapper(factors= factor_list, palette=palet)
 
+# membuat color bar yang akan ditampilkan pada layout figure
 color_bar = ColorBar(color_mapper=color_mapper, title='Confirmed Case',
                             #title=color.value.title(),
                             title_text_font_style='bold',
@@ -226,10 +218,7 @@ color_bar = ColorBar(color_mapper=color_mapper, title='Confirmed Case',
                             location=(0,0))
 
 
-# In[51]:
-
-
-# Set up a generic figure() object
+# setting figure
 fig = figure(plot_height = 540 , plot_width = 900,
              toolbar_location = 'below',
              title='Statistik sebaran Covid-19 per provinsi di Indonesia',
@@ -244,26 +233,33 @@ fig.yaxis.visible = False
 fig.xgrid.grid_line_color = None
 fig.ygrid.grid_line_color = None
 
+# melakukan reset view figure jika terdapat perubahan/update plot
 js_reset = CustomJS(args=dict(figure=fig), code="figure.reset.emit()")
 source.js_on_change('data', js_reset)
+
+# jika terdapat perubahan pada geosource maka plot diupdate
 geosource.on_change('selected', update_plot)
 
+# membuat state patches yang berisi render map berdasarkan geosource dan color mapper
 states=fig.patches(xs='xs',ys='ys', source = geosource,
                  fill_color = {'field' :'category', 'transform' : color_mapper},
                  line_color ='white', 
                  line_width = 0.5,
                  fill_alpha = 1)
 
+# membuat label nama provinsi yang berada pada masing-masing provinsi pada map
 labels = LabelSet(x='x', y='y',text='Province_name', text_align='center',x_offset=0, y_offset=0,
                   text_font_size='6pt',text_font_style='bold',
                   source = geosource, render_mode='canvas')
 
+# menambahkan tools hover ke figue
 fig.add_tools(HoverTool(renderers = [states],
                        tooltips = [ ('Provinsi','@Province_name'),
                                   ('Confirmed', '@Confirmed_cases'),
                                   ('Recovered', '@Recovered_cases'),
                                   ('Death', '@Death_cases')]))
 
+# membuat tabel kolom untuk untuk menampikan provinsi dengan kasus tertinggi
 columns = [
         TableColumn(field='rank', title='Rank'),
         TableColumn(field='province', title='Provinsi'),
@@ -273,15 +269,10 @@ columns = [
     ]
 tabel = DataTable(source=source, columns=columns,  width=440, height=540, index_position=None)
 
+# menambahkan labels dan color bar ke layout figure
 fig.add_layout(labels)
 fig.add_layout(color_bar)
 
-# layout = row(widgetbox(menu,tabel), fig)
+# Create layout and add to current document
 layout = row(widgetbox(fig,menu),tabel)
-# curdoc().add_root(row(fig,tabel))
 curdoc().add_root(layout)
-
-output_notebook()
-# # # # # See what it looks like
-show(layout)
-
